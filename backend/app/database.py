@@ -1,46 +1,25 @@
-"""
-database.py
------------
-Connecting to Supabase (PostgreSQL) via SQLAlchemy.
-"""
+"""Database engine, session factory, and declarative base."""
 
-import os
-from dotenv import load_dotenv
 from sqlalchemy import create_engine
 from sqlalchemy.orm import DeclarativeBase, sessionmaker
 
-load_dotenv()
+from app.core.config import settings
 
-DATABASE_URL = os.getenv("DATABASE_URL")
-if not DATABASE_URL:
-    raise ValueError("DATABASE_URL is not set. Copy .env.example → .env and fill it out.")
+if not settings.DATABASE_URL:
+    raise ValueError(
+        "DATABASE_URL is not set. Copy .env.example → .env and fill it in."
+    )
 
 engine = create_engine(
-    DATABASE_URL,
-    pool_pre_ping=True,   # checks if connection is alive before request
+    settings.DATABASE_URL,
+    pool_pre_ping=True,
     pool_size=5,
     max_overflow=10,
-    echo=False,           # echo=True → outputs SQL to console (for debugging)
+    echo=False,
 )
 
 SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
 
 
 class Base(DeclarativeBase):
-    """Base class for all ORM models."""
-    pass
-
-
-def get_db():
-    """
-    Session generator — dependency for FastAPI or manual use.
-
-    Example:
-        with SessionLocal() as db:
-            db.query(Customer).all()
-    """
-    db = SessionLocal()
-    try:
-        yield db
-    finally:
-        db.close()
+    """Shared declarative base for all ORM models."""

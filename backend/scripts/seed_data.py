@@ -23,6 +23,8 @@ from app.models.customer import Customer
 
 from typing import Union
 
+EDU_ORDER = {'Basic': 0, '2n Cycle': 1, 'Graduation': 2, 'Master': 3, 'PhD': 4}
+
 
 def parse_date(val) -> Union[date, None]:
     if pd.isna(val):
@@ -35,6 +37,20 @@ def parse_date(val) -> Union[date, None]:
         except (ValueError, TypeError):
             continue
     return None
+
+
+def upsert_ordered_lookup(session, model, id_map: dict[str, int]) -> dict[str, int]:
+    """Inserts lookup rows with explicit IDs. Returns {name: id}."""
+    stmt = pg_insert(model).values([
+        {"id": id_, "name": name} for name, id_ in id_map.items()
+    ])
+    stmt = stmt.on_conflict_do_update(
+        index_elements=["id"],
+        set_={"name": stmt.excluded.name},
+    )
+    session.execute(stmt)
+    session.flush()
+    return id_map
 
 
 def upsert_lookup(session, model, values: list[str]) -> dict[str, int]:
@@ -95,8 +111,8 @@ def seed(csv_path: str, batch_size: int = 200) -> None:
     with SessionLocal() as session:
         # 1. Lookup tables
         print("Lookup tables…")
-        edu_map = upsert_lookup(session, EducationLevel,
-                                df["education"].dropna().unique().tolist())
+        edu_map = upsert_ordered_lookup(session, EducationLevel, EDU_ORDER)
+
         marital_map = upsert_lookup(session, MaritalStatus,
                                     df["marital_status"].dropna().unique().tolist())
         session.commit()
