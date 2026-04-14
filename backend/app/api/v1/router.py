@@ -2,8 +2,9 @@
 
 from fastapi import APIRouter
 
-from app.api.v1.endpoints import inference, training
+from app.api.v1.endpoints import inference, monitor, training
 
 api_v1_router = APIRouter()
 api_v1_router.include_router(training.router, tags=["Training"])
 api_v1_router.include_router(inference.router, tags=["Inference"])
+api_v1_router.include_router(monitor.router)

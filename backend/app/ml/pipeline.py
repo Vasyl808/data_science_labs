@@ -6,9 +6,10 @@ from typing import TYPE_CHECKING, Callable
 
 import numpy as np
 import pandas as pd
+from sklearn.compose import ColumnTransformer
 from sklearn.linear_model import LogisticRegression
 from sklearn.pipeline import Pipeline
-from sklearn.preprocessing import StandardScaler
+from sklearn.preprocessing import RobustScaler, StandardScaler
 
 if TYPE_CHECKING:
     from app.core.config import Settings
@@ -144,11 +145,35 @@ def engineer_features(df: pd.DataFrame) -> pd.DataFrame:
     return df[output_cols]
 
 
+log_features = [
+    "MntWines_log", "MntMeatProducts_log", "MntFruits_log",
+    "MntFishProducts_log", "MntSweetProducts_log", "MntGoldProds_log",
+    "NumCatalogPurchases_log", "NumWebPurchases_log",
+]
+raw_features = [
+    "Income", "Recency", "Age", "Customer_Tenure_Days",
+    "NumStorePurchases", "TotalMnt", "TotalPurchases",
+    "WineRatio", "MeatRatio", "PremiumRatio", "CatalogShare",
+]
+passthrough_features = ["Education", "Kidhome", "Teenhome", "is_alone"]
+
+
+def build_preprocessor() -> ColumnTransformer:
+    return ColumnTransformer(
+        transformers=[
+            ("std",    StandardScaler(), log_features),
+            ("robust", RobustScaler(),   raw_features),
+            ("pass",   "passthrough",    passthrough_features),
+        ],
+        remainder="drop",
+    )
+
+
 def _build_logistic_regression(cfg: "Settings") -> Pipeline:
-    """Build a StandardScaler → LogisticRegression pipeline from settings."""
+    """Build a ColumnTransformer → LogisticRegression pipeline from settings."""
     return Pipeline(
         [
-            ("scaler", StandardScaler()),
+            ("prep", build_preprocessor()),
             (
                 "classifier",
                 LogisticRegression(

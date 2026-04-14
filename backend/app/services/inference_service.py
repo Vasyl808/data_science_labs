@@ -97,7 +97,45 @@ def predict(request: PredictRequest, db: Session) -> dict:
     )
 
     return {
+        "prediction_id": prediction_row.id,
         "prediction": pred_class,
         "prediction_proba": round(pred_proba, 6),
         "model_version": version,
+    }
+
+
+def update_true_label(prediction_id: int, true_label: int, db: Session) -> dict | None:
+    """Update the true label of a prediction.
+
+    Parameters
+    ----------
+    prediction_id:
+        ID of the prediction to update.
+    true_label:
+        Actual outcome (0 or 1).
+    db:
+        Active SQLAlchemy session.
+
+    Returns
+    -------
+    dict | None
+        Dict with prediction_id, true_label, message if found; None otherwise.
+    """
+    prediction_row = db.query(Prediction).filter(Prediction.id == prediction_id).first()
+    if prediction_row is None:
+        return None
+
+    prediction_row.true_label = true_label
+    db.commit()
+
+    logger.info(
+        "Updated prediction id=%d with true_label=%d",
+        prediction_id,
+        true_label,
+    )
+
+    return {
+        "prediction_id": prediction_id,
+        "true_label": true_label,
+        "message": f"Prediction {prediction_id} updated with true_label={true_label}",
     }

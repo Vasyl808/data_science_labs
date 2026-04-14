@@ -76,6 +76,22 @@ class PredictRequest(BaseModel):
 class PredictResponse(BaseModel):
     """Response body returned after a successful prediction."""
 
+    prediction_id: int
     prediction: int
     prediction_proba: float
     model_version: str
+
+
+class UpdateTrueLabelRequest(BaseModel):
+    """Request body for updating the true label of a prediction."""
+    model_config = ConfigDict(extra='forbid')
+
+    true_label: int = Field(..., ge=0, le=1, description="Actual outcome (0 or 1)")
+
+
+class UpdateTrueLabelResponse(BaseModel):
+    """Response body after updating a prediction's true label."""
+
+    prediction_id: int
+    true_label: int
+    message: str

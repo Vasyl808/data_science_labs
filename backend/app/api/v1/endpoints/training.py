@@ -1,10 +1,10 @@
 """API endpoints for model training operations."""
 
-from fastapi import APIRouter, Depends, Query
+from fastapi import APIRouter, Depends, Query, HTTPException
 from sqlalchemy.orm import Session
 
 from app.api.deps import get_db
-from app.schemas.training import TrainResponse, TrainingResultItem
+from app.schemas.training import TrainResponse, TrainingResultItem, FeatureImportanceResponse
 from app.services import training_service
 
 router = APIRouter()
@@ -42,3 +42,22 @@ def list_training_results(
 ) -> list[TrainingResultItem]:
     """Fetch persisted training result rows from the database."""
     return training_service.list_training_results(db, limit=limit)
+
+
+@router.get(
+    "/feature-importance",
+    response_model=FeatureImportanceResponse,
+    summary="Get feature importance",
+    description=(
+        "Returns feature importance using all available methods for the current model. "
+        "Linear models (LogisticRegression) return coefficient-based importance. "
+        "Tree-based models (RandomForest, XGBoost) return feature_importances_."
+    ),
+)
+def get_feature_importance() -> FeatureImportanceResponse:
+    """Get feature importance from the current trained model."""
+    try:
+        result = training_service.get_feature_importance()
+        return FeatureImportanceResponse(**result)
+    except ValueError as e:
+        raise HTTPException(status_code=404, detail=str(e))

@@ -15,15 +15,23 @@ class Prediction(Base):
     __tablename__ = "predictions"
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
-    
+
+    customer_feature_id: Mapped[int | None] = mapped_column(
+        Integer,
+        ForeignKey("customer_features.id"),
+        nullable=True,
+    )
+
     prediction: Mapped[int] = mapped_column(Integer, nullable=False)
     prediction_proba: Mapped[float] = mapped_column(Float, nullable=False)
+    true_label: Mapped[int | None] = mapped_column(Integer, nullable=True)
     source: Mapped[str] = mapped_column(String(20), nullable=False)
     model_version: Mapped[str] = mapped_column(String(100), nullable=False)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), nullable=False
     )
 
+    customer_feature = relationship("CustomerFeature", backref="predictions")
     inference_input = relationship(
         "InferenceInput", back_populates="prediction", uselist=False
     )

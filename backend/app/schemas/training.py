@@ -48,3 +48,31 @@ class TrainingResultItem(BaseModel):
     created_at: datetime
 
     model_config = {"from_attributes": True}
+
+
+class FeatureImportanceItem(BaseModel):
+    """Single feature with its importance score."""
+
+    feature: str
+    importance: float
+    rank: int
+
+
+class UnavailableMethod(BaseModel):
+    """Method that is not available for the current model."""
+
+    method: str
+    reason: str
+
+
+class FeatureImportanceResponse(BaseModel):
+    """Feature importance from different methods."""
+
+    model_version: str
+    model_type: str
+    available_methods: list[str]
+    unavailable_methods: list[UnavailableMethod]
+    coefficient_importance: list[FeatureImportanceItem] | None = None
+    feature_importance: list[FeatureImportanceItem] | None = None
+
+    model_config = {"exclude_none": True}

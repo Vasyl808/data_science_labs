@@ -1,7 +1,7 @@
 """Orchestrates model training: load → clean → split → engineer → fit → evaluate → save → persist."""
 
 import logging
-
+import numpy as np
 import pandas as pd
 from sklearn.metrics import (
     accuracy_score,
@@ -25,8 +25,9 @@ from app.ml.pipeline import (
     clean_raw_data,
     engineer_features,
 )
-from app.ml.registry import save_model
+from app.ml.registry import load_model, save_model
 from app.models.customer import Customer
+from app.models.customer_feature import CustomerFeature
 from app.models.lookup import EducationLevel, MaritalStatus
 from app.models.prediction import Prediction
 from app.models.training_result import TrainingResult
@@ -114,6 +115,9 @@ def train_model(db: Session) -> dict:
     df_train = df_train.reset_index(drop=True)
     df_test = df_test.reset_index(drop=True)
 
+    # Зберігаємо customer IDs до feature engineering (яке їх видалить)
+    train_customer_ids = df_train["Id"].tolist() if "Id" in df_train.columns else []
+
     fe_train = engineer_features(df_train)
     fe_test = engineer_features(df_test)
 
@@ -173,14 +177,34 @@ def train_model(db: Session) -> dict:
     train_preds = pipeline.predict(X_train)
     train_probas = pipeline.predict_proba(X_train)[:, 1]
 
+    cf_id_map: dict[int, int] = {}
+    cf_response_map: dict[int, int] = {}
+    if train_customer_ids:
+        cf_rows = (
+            db.query(CustomerFeature.id, CustomerFeature.customer_id, CustomerFeature.response)
+            .filter(CustomerFeature.customer_id.in_(train_customer_ids))
+            .all()
+        )
+        cf_id_map = {row.customer_id: row.id for row in cf_rows}
+        cf_response_map = {row.customer_id: row.response for row in cf_rows}
+        logger.info(
+            "Mapped %d / %d train customers to customer_features",
+            len(cf_id_map),
+            len(train_customer_ids),
+        )
+
     prediction_rows = [
         Prediction(
             prediction=int(pred),
             prediction_proba=float(proba),
+            true_label=cf_response_map.get(cust_id),
             source="train",
             model_version=version,
+            customer_feature_id=cf_id_map.get(cust_id),
         )
-        for pred, proba in zip(train_preds, train_probas)
+        for pred, proba, cust_id in zip(
+            train_preds, train_probas, train_customer_ids or [None] * len(train_preds)
+        )
     ]
     db.bulk_save_objects(prediction_rows)
     db.commit()
@@ -213,3 +237,67 @@ def list_training_results(db: Session, limit: int = 20) -> list[TrainingResult]:
         .limit(limit)
         .all()
     )
+
+
+def get_feature_importance() -> dict:
+    """Calculate feature importance using all available methods.
+
+    Returns coefficient-based importance for linear models and
+    feature_importances_ for tree-based models.
+
+    Returns
+    -------
+    dict
+        Feature importance data with model_version, model_type,
+        available_methods, unavailable_methods, and importance values.
+    """
+    try:
+        model, version = load_model()
+    except FileNotFoundError:
+        raise ValueError("No trained model found. Run /train-model first.")
+
+    model_type = type(model.named_steps["classifier"]).__name__
+    feature_names = FEATURE_COLUMNS
+
+    result = {
+        "model_version": version,
+        "model_type": model_type,
+        "available_methods": [],
+        "unavailable_methods": [],
+        "coefficient_importance": None,
+        "feature_importance": None,
+    }
+
+    classifier = model.named_steps["classifier"]
+
+    # Coefficient-based (LogisticRegression, LinearSVM, etc.)
+    if hasattr(classifier, "coef_"):
+        coef = np.abs(classifier.coef_[0])
+        indices = np.argsort(coef)[::-1]
+        result["coefficient_importance"] = [
+            {"feature": feature_names[idx], "importance": float(coef[idx]), "rank": rank}
+            for rank, idx in enumerate(indices, 1)
+        ]
+        result["available_methods"].append("coefficient")
+    else:
+        result["unavailable_methods"].append({
+            "method": "coefficient",
+            "reason": "Only available for linear models (LogisticRegression, LinearSVM, etc.)",
+        })
+
+    # Feature importance (RandomForest, XGBoost, etc.)
+    if hasattr(classifier, "feature_importances_"):
+        importances = classifier.feature_importances_
+        indices = np.argsort(importances)[::-1]
+        result["feature_importance"] = [
+            {"feature": feature_names[idx], "importance": float(importances[idx]), "rank": rank}
+            for rank, idx in enumerate(indices, 1)
+        ]
+        result["available_methods"].append("feature_importance")
+    else:
+        result["unavailable_methods"].append({
+            "method": "feature_importance",
+            "reason": "Only available for tree-based models (RandomForest, XGBoost, etc.)",
+        })
+
+    return result
