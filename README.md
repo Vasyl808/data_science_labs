@@ -118,6 +118,8 @@ curl -X POST http://localhost:8000/api/v1/train-model
 
 Приймає сирі дані клієнта (без `Id` та `Response`), прогнозує відповідь.
 
+**Опціональний параметр `model_version`** — можна вказати версію моделі для прогнозу. Якщо не вказано, використовується остання натренована модель.
+
 ```bash
 curl -X POST http://localhost:8000/api/v1/predict \
   -H "Content-Type: application/json" \
@@ -145,10 +147,40 @@ curl -X POST http://localhost:8000/api/v1/predict \
   }'
 ```
 
+Приклад із конкретною версією моделі:
+```bash
+curl -X POST http://localhost:8000/api/v1/predict \
+  -H "Content-Type: application/json" \
+  -d '{
+    "year_birth": 1970,
+    "education": "Graduation",
+    "marital_status": "Single",
+    "income": 58138,
+    "kidhome": 0,
+    "teenhome": 0,
+    "dt_customer": "2014-06-16",
+    "recency": 58,
+    "mnt_wines": 635,
+    "mnt_fruits": 88,
+    "mnt_meat_products": 546,
+    "mnt_fish_products": 172,
+    "mnt_sweet_products": 88,
+    "mnt_gold_prods": 88,
+    "num_deals_purchases": 3,
+    "num_web_purchases": 8,
+    "num_catalog_purchases": 10,
+    "num_store_purchases": 4,
+    "num_web_visits_month": 7,
+    "complain": 0,
+    "model_version": "logistic_regression_weighted_20260408_163000"
+  }'
+```
+
 **Відповідь:**
 
 ```json
 {
+  "prediction_id": 42,
   "prediction": 1,
   "prediction_proba": 0.7312,
   "model_version": "logistic_regression_weighted_20260408_163000"
@@ -171,7 +203,18 @@ curl -X PATCH http://localhost:8000/api/v1/predictions/42/true-label \
 
 ### `GET /api/v1/feature-importance`
 
-Повертає важливість кожної фічі для поточної натренованої моделі (коефіцієнти для логістичної регресії або `feature_importances_` для дерев).
+Повертає важливість кожної фічі для вказаної моделі (коефіцієнти для логістичної регресії або `feature_importances_` для дерев).
+
+**Query-параметри:**
+- `model_version` (опціонально) — версія моделі. Якщо не вказано, використовується остання версія.
+
+```bash
+# Остання модель
+curl http://localhost:8000/api/v1/feature-importance
+
+# Конкретна версія
+curl "http://localhost:8000/api/v1/feature-importance?model_version=logistic_regression_weighted_20260408_163000"
+```
 
 ### `GET /api/v1/monitor` та `GET /api/v1/monitor/{report_type}`
 
@@ -214,9 +257,9 @@ curl -X PATCH http://localhost:8000/api/v1/predictions/42/true-label \
 При виклику `/predict`, у БД записується наступне:
 
 **Таблиця `predictions`:**
-| id | prediction | prediction_proba | source | model_version | created_at |
-|----|------------|------------------|-----------|----------------------------------|---------------------|
-| 42 | 1 | 0.7312 | inference | logistic_regression_20260408 | 2026-04-13 10:42:01 |
+| prediction_id | prediction | prediction_proba | source | model_version | created_at |
+|---------------|------------|------------------|-----------|----------------------------------|---------------------|
+| 42 | 1 | 0.7312 | inference | logistic_regression_weighted_20260408 | 2026-04-13 10:42:01 |
 
 **Таблиця `inference_inputs` (для prediction_id=42):**
 | id | prediction_id | year_birth | education | marital_status | income | ... |
