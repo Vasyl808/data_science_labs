@@ -1,5 +1,6 @@
 """Pydantic schemas for inference request and response payloads."""
 
+from typing import Optional
 from pydantic import BaseModel, Field, field_validator, ConfigDict
 from enum import Enum
 from datetime import datetime
@@ -56,6 +57,9 @@ class PredictRequest(BaseModel):
     num_web_visits_month: int = Field(..., ge=0, examples=[7])
     complain: int = Field(
         ..., ge=0, le=1, examples=[0], description="Complained in last 2 years (0/1)"
+    )
+    model_version: Optional[str] = Field(
+        default=None, description="Optional model version to use for prediction. If not provided, latest is used."
     )
 
     @field_validator("dt_customer")

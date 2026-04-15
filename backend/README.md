@@ -50,6 +50,37 @@ Swagger UI: [http://localhost:8000/docs](http://localhost:8000/docs)
 
 ---
 
+## Запуск через Docker
+
+### 1. Налаштувати `.env`
+Переконайтесь, що у папці `backend` є файл `.env` із змінною для вашого з'єднання з БД:
+```ini
+DATABASE_URL=postgresql://user:password@host:5432/dbname
+```
+
+### 2. Запустити контейнер
+У папці `backend` виконайте команду:
+```bash
+docker-compose up --build -d
+```
+
+### 3. Міграції та заповнення даних (у Docker)
+Якщо БД ще порожня, виконайте скрипти конфігурації усередині контейнера `ml_backend`:
+```bash
+# Міграції
+docker exec -it ml_backend alembic upgrade head
+
+# Заповнення сирих даних
+docker exec -it ml_backend python scripts/seed_data.py --csv ../superstore_data.csv
+
+# Препроцесовані фічі
+docker exec -it ml_backend python scripts/seed_features.py
+```
+
+API буде доступне на [http://localhost:8000](http://localhost:8000).
+
+---
+
 ## Ендпоінти
 
 ### `POST /api/v1/train-model`
@@ -124,6 +155,33 @@ curl -X POST http://localhost:8000/api/v1/predict \
 }
 ```
 
+### `PATCH /api/v1/predictions/{prediction_id}/true-label`
+
+Оновлює фактичний результат (`true_label`) для раніше зробленого прогнозу.
+
+```bash
+curl -X PATCH http://localhost:8000/api/v1/predictions/42/true-label \
+  -H "Content-Type: application/json" \
+  -d '{"true_label": 1}'
+```
+
+### `GET /api/v1/training-results`
+
+Повертає список результатів попередніх тренувань моделі. Можна вказати параметр `limit` (за замовчуванням 20).
+
+### `GET /api/v1/feature-importance`
+
+Повертає важливість кожної фічі для поточної натренованої моделі (коефіцієнти для логістичної регресії або `feature_importances_` для дерев).
+
+### `GET /api/v1/monitor` та `GET /api/v1/monitor/{report_type}`
+
+Надає доступ до інтерактивних HTML-звітів **Evidently AI** для моніторингу моделі:
+- `/api/v1/monitor` — зведений дашборд з усіма графіками.
+- `/api/v1/monitor/data_drift` — звіт про Data Drift.
+- `/api/v1/monitor/target_drift` — звіт про Target Drift.
+- `/api/v1/monitor/classification` — метрики класифікаційної моделі.
+- `/api/v1/monitor/data_quality` — звіт про якість даних.
+
 ---
 
 ## Структура БД
@@ -144,6 +202,7 @@ curl -X POST http://localhost:8000/api/v1/predict \
 | prediction_proba | Ймовірність класу 1 |
 | source | `"train"` — при тренуванні, `"inference"` — при прогнозі |
 | model_version | Версія моделі (назва + timestamp) |
+| true_label | Фактичний результат (заповнюється пізніше через PATCH) |
 
 ### `inference_inputs` — вхідні дані запиту
 Зберігає повний JSON-запит від користувача. Зв'язок 1:1 з `predictions` через `prediction_id`.

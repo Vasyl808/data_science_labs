@@ -8,6 +8,7 @@ from sqlalchemy.orm import Session
 from app.ml.pipeline import FEATURE_COLUMNS, engineer_features
 from app.ml.registry import load_model
 from app.models.prediction import InferenceInput, Prediction
+from app.repositories import PredictionRepository
 from app.schemas.inference import PredictRequest
 
 logger = logging.getLogger(__name__)
@@ -40,102 +41,75 @@ def _request_to_raw_df(request: PredictRequest) -> pd.DataFrame:
     return pd.DataFrame(data)
 
 
-def predict(request: PredictRequest, db: Session) -> dict:
-    """Run a single-row prediction and persist the result to the database.
+class InferenceService:
+    def __init__(self, db: Session):
+        self.db = db
+        self.prediction_repo = PredictionRepository(db)
 
-    Steps
-    -----
-    1. Convert the raw request payload to a DataFrame.
-    2. Apply the same feature engineering used during training.
-    3. Load the latest trained pipeline from disk.
-    4. Generate prediction class and probability.
-    5. Persist a Prediction row and the raw InferenceInput payload.
+    def predict(self, request: PredictRequest) -> dict:
+        """Run a single-row prediction and persist the result to the database."""
 
-    Returns
-    -------
-    dict
-        Keys: ``prediction``, ``prediction_proba``, ``model_version``.
-    """
-    df_raw = _request_to_raw_df(request)
-    logger.info("Raw DF dtypes:\n%s", df_raw.dtypes)
-    logger.info("Raw DF values:\n%s", df_raw.iloc[0].to_dict())
+        df_raw = _request_to_raw_df(request)
+        logger.info("Raw DF values:\n%s", df_raw.iloc[0].to_dict())
 
-    df_fe = engineer_features(df_raw)
-    X = df_fe[FEATURE_COLUMNS]
+        df_fe = engineer_features(df_raw)
+        X = df_fe[FEATURE_COLUMNS]
 
-    nan_cols = X.columns[X.isna().any()].tolist()
-    if nan_cols:
-        logger.error("NaN detected in columns: %s", nan_cols)
-        logger.error("Feature values:\n%s", X.iloc[0].to_dict())
+        nan_cols = X.columns[X.isna().any()].tolist()
+        if nan_cols:
+            logger.error("NaN detected in columns: %s", nan_cols)
 
-    pipeline, version = load_model()
+        pipeline, version = load_model(request.model_version)
 
-    pred_class = int(pipeline.predict(X)[0])
-    pred_proba = float(pipeline.predict_proba(X)[0, 1])
+        pred_class = int(pipeline.predict(X)[0])
+        pred_proba = float(pipeline.predict_proba(X)[0, 1])
 
-    prediction_row = Prediction(
-        prediction=pred_class,
-        prediction_proba=round(pred_proba, 6),
-        source="inference",
-        model_version=version,
-    )
-    db.add(prediction_row)
-    db.flush()
+        with self.db.begin():
+            prediction_row = Prediction(
+                prediction=pred_class,
+                prediction_proba=round(pred_proba, 6),
+                source="inference",
+                model_version=version,
+            )
+            self.prediction_repo.add(prediction_row)
 
-    inference_input = InferenceInput(
-        prediction_id=prediction_row.id,
-        **request.model_dump(),
-    )
-    db.add(inference_input)
-    db.commit()
+            inference_input = InferenceInput(
+                prediction=prediction_row,
+                **request.model_dump(exclude={"model_version"}),
+            )
+            self.prediction_repo.add_inference_input(inference_input)
 
-    logger.info(
-        "Inference prediction=%d proba=%.4f version=%s",
-        pred_class,
-        pred_proba,
-        version,
-    )
+        logger.info(
+            "Inference prediction=%d proba=%.4f version=%s",
+            pred_class,
+            pred_proba,
+            version,
+        )
 
-    return {
-        "prediction_id": prediction_row.id,
-        "prediction": pred_class,
-        "prediction_proba": round(pred_proba, 6),
-        "model_version": version,
-    }
+        return {
+            "prediction_id": prediction_row.id,
+            "prediction": pred_class,
+            "prediction_proba": round(pred_proba, 6),
+            "model_version": version,
+        }
 
+    def update_true_label(self, prediction_id: int, true_label: int) -> dict | None:
+        """Update the true label of a prediction."""
 
-def update_true_label(prediction_id: int, true_label: int, db: Session) -> dict | None:
-    """Update the true label of a prediction.
+        with self.db.begin():
+            updated = self.prediction_repo.update_true_label(prediction_id, true_label)
 
-    Parameters
-    ----------
-    prediction_id:
-        ID of the prediction to update.
-    true_label:
-        Actual outcome (0 or 1).
-    db:
-        Active SQLAlchemy session.
+            if not updated:
+                return None
 
-    Returns
-    -------
-    dict | None
-        Dict with prediction_id, true_label, message if found; None otherwise.
-    """
-    prediction_row = db.query(Prediction).filter(Prediction.id == prediction_id).first()
-    if prediction_row is None:
-        return None
+        logger.info(
+            "Updated prediction id=%d with true_label=%d",
+            prediction_id,
+            true_label,
+        )
 
-    prediction_row.true_label = true_label
-    db.commit()
-
-    logger.info(
-        "Updated prediction id=%d with true_label=%d",
-        prediction_id,
-        true_label,
-    )
-
-    return {
-        "prediction_id": prediction_id,
-        "true_label": true_label,
-        "message": f"Prediction {prediction_id} updated with true_label={true_label}",
-    }
+        return {
+            "prediction_id": prediction_id,
+            "true_label": true_label,
+            "message": f"Prediction {prediction_id} updated with true_label={true_label}",
+        }

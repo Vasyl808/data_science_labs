@@ -9,13 +9,8 @@ from fastapi import APIRouter, Depends, HTTPException, Query
 from fastapi.responses import HTMLResponse
 from sqlalchemy.orm import Session
 
-from app.api.deps import get_db
-from app.services.monitoring_service import (
-    REPORT_GENERATORS,
-    generate_all_reports,
-    get_current_data,
-    get_reference_data,
-)
+from app.api.deps import get_monitoring_service
+from app.services.monitoring_service import MonitoringService
 
 logger = logging.getLogger(__name__)
 
@@ -32,10 +27,10 @@ router = APIRouter(prefix="/monitor", tags=["Monitoring"])
         "and Data Quality."
     ),
 )
-def get_combined_dashboard(db: Session = Depends(get_db)):
+def get_combined_dashboard(service: MonitoringService = Depends(get_monitoring_service)):
     """Generate and return a combined HTML dashboard with all reports."""
     try:
-        reports = generate_all_reports(session=db)
+        reports = service.generate_all_reports()
     except ValueError as exc:
         raise HTTPException(status_code=422, detail=str(exc))
 
@@ -118,33 +113,19 @@ def get_combined_dashboard(db: Session = Depends(get_db)):
 )
 def get_single_report(
     report_type: str,
-    db: Session = Depends(get_db),
+    service: MonitoringService = Depends(get_monitoring_service),
 ):
     """Generate and return a single monitoring report by type."""
-    if report_type not in REPORT_GENERATORS:
-        valid = ", ".join(REPORT_GENERATORS.keys())
+    available_reports = MonitoringService.get_available_reports()
+    if report_type not in available_reports:
+        valid = ", ".join(available_reports)
         raise HTTPException(
             status_code=400,
             detail=f"Unknown report type: {report_type!r}. Valid types: {valid}",
         )
 
     try:
-        reference = get_reference_data(db)
-        current = get_current_data(db)
-
-        if reference.empty:
-            raise ValueError(
-                "Reference dataset is empty — run seed_features.py first."
-            )
-        if current.empty:
-            raise ValueError(
-                "Current dataset is empty — send inference requests or "
-                "run generate_inference_data.py."
-            )
-
-        generator = REPORT_GENERATORS[report_type]
-        html = generator(reference, current)
-
+        html = service.generate_single_report(report_type)
     except ValueError as exc:
         raise HTTPException(status_code=422, detail=str(exc))
 

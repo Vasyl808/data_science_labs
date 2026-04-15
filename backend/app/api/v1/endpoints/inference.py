@@ -1,16 +1,18 @@
 from fastapi import APIRouter, Depends, HTTPException
-from sqlalchemy.orm import Session
-from app.api.deps import get_db
+from app.api.deps import get_inference_service
 from app.schemas.inference import PredictRequest, PredictResponse, UpdateTrueLabelRequest, UpdateTrueLabelResponse
-from app.services import inference_service
+from app.services.inference_service import InferenceService
 
 router = APIRouter()
 
 
 @router.post('/predict', response_model=PredictResponse, summary='Predict customer response', description='Accepts raw customer data (same columns as original CSV, without Id/Response), applies feature engineering, loads the latest trained model, predicts, and saves both the prediction and the raw input payload to the database.')
-def predict(request: PredictRequest, db: Session=Depends(get_db)) -> PredictResponse:
-    result = inference_service.predict(request, db)
-    return PredictResponse(**result)
+def predict(request: PredictRequest, service: InferenceService = Depends(get_inference_service)) -> PredictResponse:
+    try:
+        result = service.predict(request)
+        return PredictResponse(**result)
+    except FileNotFoundError as e:
+        raise HTTPException(status_code=404, detail=str(e))
 
 
 @router.patch(
@@ -22,9 +24,9 @@ def predict(request: PredictRequest, db: Session=Depends(get_db)) -> PredictResp
 def update_true_label(
     prediction_id: int,
     request: UpdateTrueLabelRequest,
-    db: Session = Depends(get_db),
+    service: InferenceService = Depends(get_inference_service),
 ) -> UpdateTrueLabelResponse:
-    result = inference_service.update_true_label(prediction_id, request.true_label, db)
+    result = service.update_true_label(prediction_id, request.true_label)
     if result is None:
         raise HTTPException(status_code=404, detail=f'Prediction with id={prediction_id} not found')
     return UpdateTrueLabelResponse(**result)

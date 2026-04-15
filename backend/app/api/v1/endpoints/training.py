@@ -1,11 +1,10 @@
 """API endpoints for model training operations."""
 
 from fastapi import APIRouter, Depends, Query, HTTPException
-from sqlalchemy.orm import Session
 
-from app.api.deps import get_db
+from app.api.deps import get_training_service
 from app.schemas.training import TrainResponse, TrainingResultItem, FeatureImportanceResponse
-from app.services import training_service
+from app.services.training_service import TrainingService
 
 router = APIRouter()
 
@@ -21,9 +20,9 @@ router = APIRouter()
         "row, and bulk-inserts training predictions."
     ),
 )
-def train_model(db: Session = Depends(get_db)) -> TrainResponse:
+def train_model(service: TrainingService = Depends(get_training_service)) -> TrainResponse:
     """Trigger a full model training run."""
-    result = training_service.train_model(db)
+    result = service.train_model()
     return TrainResponse(**result)
 
 
@@ -38,10 +37,10 @@ def train_model(db: Session = Depends(get_db)) -> TrainResponse:
 )
 def list_training_results(
     limit: int = Query(20, ge=1, le=200, description="Maximum number of results to return"),
-    db: Session = Depends(get_db),
+    service: TrainingService = Depends(get_training_service),
 ) -> list[TrainingResultItem]:
     """Fetch persisted training result rows from the database."""
-    return training_service.list_training_results(db, limit=limit)
+    return service.list_training_results(limit=limit)
 
 
 @router.get(
@@ -54,10 +53,13 @@ def list_training_results(
         "Tree-based models (RandomForest, XGBoost) return feature_importances_."
     ),
 )
-def get_feature_importance() -> FeatureImportanceResponse:
-    """Get feature importance from the current trained model."""
+def get_feature_importance(
+    model_version: str | None = Query(None, description="Optional explicit model version string. If omitted, the latest version is used."),
+    service: TrainingService = Depends(get_training_service)
+) -> FeatureImportanceResponse:
+    """Get feature importance from a trained model."""
     try:
-        result = training_service.get_feature_importance()
+        result = service.get_feature_importance(model_version=model_version)
         return FeatureImportanceResponse(**result)
     except ValueError as e:
         raise HTTPException(status_code=404, detail=str(e))

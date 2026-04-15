@@ -18,7 +18,7 @@ class Settings(BaseSettings):
     LR_C: float = 18.06362747243349
     LR_PENALTY: str = "elasticnet"
     LR_L1_RATIO: float = 0.4401315633673214
-    LR_MAX_ITER: int = 5000
+    LR_MAX_ITER: int = 2000
     LR_CLASS_WEIGHT: str = "balanced"
 
     TEST_SIZE: float = 0.20

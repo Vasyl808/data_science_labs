@@ -128,17 +128,18 @@ def send_to_api(records: list[dict]) -> None:
     """Send inference records directly through the service layer (no HTTP)."""
     from app.database import SessionLocal
     from app.schemas.inference import PredictRequest
-    from app.services import inference_service
+    from app.services.inference_service import InferenceService
 
     session = SessionLocal()
     success = 0
     errors = 0
 
     try:
+        service = InferenceService(session)
         for i, record in enumerate(records):
             try:
                 request = PredictRequest(**record)
-                result = inference_service.predict(request, session)
+                result = service.predict(request)
                 success += 1
                 if (i + 1) % 10 == 0:
                     logger.info(

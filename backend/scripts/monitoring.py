@@ -25,7 +25,8 @@ logger = logging.getLogger(__name__)
 
 def main() -> None:
     from pathlib import Path
-    from app.services.monitoring_service import generate_all_reports, REPORTS_DIR
+    from app.database import SessionLocal
+    from app.services.monitoring_service import MonitoringService, REPORTS_DIR
 
     logger.info("=" * 60)
     logger.info("ML Model Monitoring — Report Generation")
@@ -35,7 +36,9 @@ def main() -> None:
     logger.info("Reports will be saved to: %s", reports_dir)
 
     try:
-        reports = generate_all_reports(save_dir=reports_dir)
+        with SessionLocal() as session:
+            service = MonitoringService(session)
+            reports = service.generate_all_reports(save_dir=reports_dir)
     except ValueError as exc:
         logger.error("Cannot generate reports: %s", exc)
         sys.exit(1)
